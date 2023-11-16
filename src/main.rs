@@ -2,9 +2,9 @@ use scheduling::prelude::*;
 
 fn main() {
     let mut s = TaskSet::new(vec![
-        task!(c: 2, d: 5, t: 9),
-        task!(c: 12, d: 33, t: 38),
-        task!(c: 7, d: 16, t: 23),
+        task!(c: 1, d: 4, t: 6, o: 3, p: 3),
+        task!(c: 3, d: 10, t: 10, o: 3, p: 2),
+        task!(c: 6, d: 12, t: 18, o: 2, p: 1),
     ]);
     println!("{:?}", s.solve_fpps())
 }

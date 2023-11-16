@@ -15,6 +15,15 @@ macro_rules! task {
             q: $q,
         }
     };
+    ( c: $c:expr, d: $d:expr, t: $t:expr, o: $o:expr, p: $p:expr  ) => {
+        ThreshTask {
+            c: $c,
+            d: $d,
+            t: $t,
+            o: $o,
+            p: $p,
+        }
+    };
 }
 
 macro_rules! impl_abstract_task {
@@ -62,7 +71,15 @@ pub struct DeferredTask {
     pub q: u32,
 }
 
-impl_abstract_task!(Task, DeferredTask);
+pub struct ThreshTask {
+    pub c: u32,
+    pub d: u32,
+    pub t: u32,
+    pub o: u32,
+    pub p: u32,
+}
+
+impl_abstract_task!(Task, DeferredTask, ThreshTask);
 
 pub trait AbstractTask {
     fn c(&self) -> u32;
@@ -76,8 +93,8 @@ pub trait AbstractTask {
 
 pub trait EDF: AbstractTask {}
 
-impl EDF for Task {}
+impl<T> EDF for T where T: AbstractTask {}
 
 pub trait FPPS: AbstractTask {}
 
-impl FPPS for Task {}
+impl<T> FPPS for T where T: AbstractTask {}
