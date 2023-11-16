@@ -7,6 +7,13 @@ macro_rules! task {
             t: $t,
         }
     };
+    ( c: $c:expr, t: $t:expr, d: $d:expr  ) => {
+        Task {
+            c: $c,
+            d: $d,
+            t: $t,
+        }
+    };
     ( c: $c:expr, d: $d:expr, t: $t:expr, q: $q:expr  ) => {
         DeferredTask {
             c: $c,
@@ -15,7 +22,24 @@ macro_rules! task {
             q: $q,
         }
     };
+    ( c: $c:expr, t: $t:expr, d: $d:expr, q: $q:expr  ) => {
+        DeferredTask {
+            c: $c,
+            d: $d,
+            t: $t,
+            q: $q,
+        }
+    };
     ( c: $c:expr, d: $d:expr, t: $t:expr, o: $o:expr, p: $p:expr  ) => {
+        ThreshTask {
+            c: $c,
+            d: $d,
+            t: $t,
+            o: $o,
+            p: $p,
+        }
+    };
+    ( c: $c:expr, t: $t:expr, d: $d:expr, o: $o:expr, p: $p:expr  ) => {
         ThreshTask {
             c: $c,
             d: $d,
@@ -47,6 +71,8 @@ macro_rules! impl_abstract_task {
     };
 }
 
+/// The Task represents a basic task that has
+/// computation time c, deadline d and period t.
 #[derive(Clone, Copy, Debug)]
 pub struct Task {
     pub c: u32,
@@ -57,10 +83,6 @@ pub struct Task {
 impl Task {
     pub fn new(c: u32, d: u32, t: u32) -> Self {
         Self { c, d, t }
-    }
-
-    pub fn p_util(&self) -> f64 {
-        self.c as f64 / self.t as f64
     }
 }
 
@@ -81,20 +103,29 @@ pub struct ThreshTask {
 
 impl_abstract_task!(Task, DeferredTask, ThreshTask);
 
+/// The AbstractTask is the trait implemented by all Tasks.
+/// All Tasks need to have a way to retrieve, c, d and t.
+/// This Trait enables EDF and FPPS scheduling tests.
 pub trait AbstractTask {
+    /// computation time c.
     fn c(&self) -> u32;
+    /// deadline c.
     fn d(&self) -> u32;
+    /// period t.
     fn t(&self) -> u32;
+    /// Calculates processor util of task.
     #[inline]
     fn p_util(&self) -> f64 {
         self.c() as f64 / self.t() as f64
     }
 }
 
+/// Marker Trait that enables EDF schedubility test in Taskset.
 pub trait EDF: AbstractTask {}
 
 impl<T> EDF for T where T: AbstractTask {}
 
+/// Marker Trait that enables FPPS schedubility test in Taskset.
 pub trait FPPS: AbstractTask {}
 
 impl<T> FPPS for T where T: AbstractTask {}

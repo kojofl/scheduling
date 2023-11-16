@@ -1,6 +1,7 @@
 use std::{
     cmp::{max, min},
     collections::HashSet,
+    fmt::Debug,
 };
 
 use crate::task::{AbstractTask, EDF, FPPS};
@@ -31,7 +32,7 @@ pub enum DeadlineStrategy {
 
 #[derive(Clone, Debug)]
 pub struct TaskSet<T: AbstractTask> {
-    set: Vec<T>,
+    pub set: Vec<T>,
     strategy: DeadlineStrategy,
 }
 
@@ -68,28 +69,43 @@ impl<T: AbstractTask> TaskSet<T> {
 }
 
 impl<T: FPPS> TaskSet<T> {
+    /// Solves schedubility test for FPPS in increasing complexity
     pub fn solve_fpps(&mut self) -> SchedulingResult {
+        // Establish correct ordering
         self.set.sort_by(|a, b| a.d().cmp(&b.d()));
+        // Processor util test
         let u = self.set.iter().fold(0.0, |acc, t| acc + t.p_util());
         if u > 1.0 {
             return SchedulingResult::Unschedulable(format!("Processor demand above 1\nU: {u}"));
         }
-        println!("U: {u}");
-        let n = self.set.len() as f64;
-        let u_lub = n * (2_f64.powf(1.0 / n) - 1.0);
-        if u <= u_lub {
-            return SchedulingResult::Schedulable(format!(
-                "Processor util under lowest upper bound: {u_lub} U: {u}"
-            ));
+        match self.strategy {
+            // If implicit deadlines we can do U_lub and Hyperbolic bound befor resorting to rtime
+            DeadlineStrategy::Implicit => {
+                println!("U: {u}");
+                // U_lub test
+                let n = self.set.len() as f64;
+                let u_lub = n * (2_f64.powf(1.0 / n) - 1.0);
+                if u <= u_lub {
+                    return SchedulingResult::Schedulable(format!(
+                        "Processor util under lowest upper bound: {u_lub} U: {u}"
+                    ));
+                }
+                let h_bound = self.set.iter().fold(1.0, |acc, t| acc * (t.p_util() + 1.0));
+                if h_bound <= 2.0 {
+                    return SchedulingResult::Schedulable(format!(
+                        "Hyperbolic Bound test successfull {h_bound} <= 2.0"
+                    ));
+                }
+                println!("h_bound: {h_bound}");
+                self.rtime()
+            }
+            DeadlineStrategy::Constraint => self.rtime(),
+            DeadlineStrategy::Arbitrary => todo!(),
         }
-        let h_bound = self.set.iter().fold(1.0, |acc, t| acc * (t.p_util() + 1.0));
-        if h_bound <= 2.0 {
-            return SchedulingResult::Schedulable(format!(
-                "Hyperbolic Bound test successfull {h_bound} <= 2.0"
-            ));
-        }
-        println!("h_bound: {h_bound}");
-        // start response time analysis
+    }
+
+    /// Response time analysis.
+    fn rtime(&self) -> SchedulingResult {
         for (i, t) in self.set.iter().enumerate() {
             let mut point = self.set[..=i].iter().fold(0, |acc, t| acc + t.c());
             let mut j = 0;
@@ -103,7 +119,7 @@ impl<T: FPPS> TaskSet<T> {
                 if new_p > t.d() {
                     return SchedulingResult::Unschedulable(
                         format!("The response time analysis detected a deadline miss at {new_p} in T{i} c: {}, t: {}, d: {}", t.c(), t.t(), t.d()),
-                    );
+                        );
                 }
                 if point == new_p {
                     break;
@@ -119,12 +135,13 @@ impl<T: FPPS> TaskSet<T> {
     }
 }
 
-impl<T: EDF> TaskSet<T> {
+impl<T: EDF + Debug> TaskSet<T> {
     pub fn solve_edf(&self) -> SchedulingResult {
         let u = self.set.iter().fold(0.0, |acc, t| acc + t.p_util());
         if u > 1.0 {
             return SchedulingResult::Unschedulable(format!("Processor demand above 1\nU: {u}"));
         }
+        println!("U: {u}");
         match self.strategy {
             DeadlineStrategy::Implicit => SchedulingResult::Schedulable(format!(
                 "Processor demand below 1 and implicit deadlines\nU: {u}"
