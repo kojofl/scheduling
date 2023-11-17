@@ -119,13 +119,3 @@ pub trait AbstractTask {
         self.c() as f64 / self.t() as f64
     }
 }
-
-/// Marker Trait that enables EDF schedubility test in Taskset.
-pub trait EDF: AbstractTask {}
-
-impl<T> EDF for T where T: AbstractTask {}
-
-/// Marker Trait that enables FPPS schedubility test in Taskset.
-pub trait FPPS: AbstractTask {}
-
-impl<T> FPPS for T where T: AbstractTask {}

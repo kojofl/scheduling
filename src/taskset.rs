@@ -1,10 +1,6 @@
-use std::{
-    cmp::{max, min},
-    collections::HashSet,
-    fmt::Debug,
-};
+use std::{collections::HashSet, fmt::Debug};
 
-use crate::task::{AbstractTask, EDF, FPPS};
+use crate::task::AbstractTask;
 
 #[macro_export]
 macro_rules! gcd {
@@ -68,11 +64,14 @@ impl<T: AbstractTask> TaskSet<T> {
     }
 }
 
-impl<T: FPPS> TaskSet<T> {
+impl<T: AbstractTask> TaskSet<T> {
     /// Solves schedubility test for FPPS in increasing complexity
-    pub fn solve_fpps(&mut self) -> SchedulingResult {
-        // Establish correct ordering
-        self.set.sort_by(|a, b| a.d().cmp(&b.d()));
+    /// It is important to sort the tasks according to their priority
+    /// before calling this function.
+    /// This priority depends on the tasks if for example theire are
+    /// normal `Task` it will expect EDF if their are `PriorityTask`
+    /// it is sorted according to the given priority.
+    pub fn solve_fpps(&self) -> SchedulingResult {
         // Processor util test
         let u = self.set.iter().fold(0.0, |acc, t| acc + t.p_util());
         if u > 1.0 {
@@ -100,7 +99,7 @@ impl<T: FPPS> TaskSet<T> {
                 self.rtime()
             }
             DeadlineStrategy::Constraint => self.rtime(),
-            DeadlineStrategy::Arbitrary => todo!(),
+            DeadlineStrategy::Arbitrary => self.level_i_non_blocking(),
         }
     }
 
@@ -133,9 +132,28 @@ impl<T: FPPS> TaskSet<T> {
             "No deadline miss in response time analysis => Schedulable using DM".into(),
         )
     }
+
+    fn level_i_non_blocking(&self) -> SchedulingResult {
+        for (i, t) in self.set.iter().enumerate() {
+            let mut level_i = self.set[..=i].iter().fold(0, |acc, t| acc + t.c()) as f64;
+            loop {
+                let new_l = self.set[..=i].iter().fold(0.0, |acc, t| {
+                    acc + (level_i / t.t() as f64).ceil() * t.c() as f64
+                });
+                // We found fixpoint and this the level i active period
+                if new_l == level_i {
+                    break;
+                }
+                level_i = new_l;
+            }
+            let l = (level_i / t.t() as f64).ceil() as u32;
+        }
+        todo!()
+    }
 }
 
-impl<T: EDF + Debug> TaskSet<T> {
+// Seperate edf implementation
+impl<T: AbstractTask> TaskSet<T> {
     pub fn solve_edf(&self) -> SchedulingResult {
         let u = self.set.iter().fold(0.0, |acc, t| acc + t.p_util());
         if u > 1.0 {
@@ -173,21 +191,20 @@ impl<T: EDF + Debug> TaskSet<T> {
         ls.sort();
         for l in ls {
             let g = self.g(l as f64);
-            match l.cmp(&(g as u32)) {
-                std::cmp::Ordering::Less => {
-                    return SchedulingResult::Unschedulable(format!(
-                        "Processor demand failed L: {}, g(0,L): {}",
-                        l, g
-                    ))
-                }
-                _ => {}
+            if l < g as u32 {
+                return SchedulingResult::Unschedulable(format!(
+                    "Processor demand failed L: {}, g(0,L): {}",
+                    l, g
+                ));
             }
         }
-        return SchedulingResult::Schedulable(format!(
+        SchedulingResult::Schedulable(format!(
             "Processor demand success all d < {bound} could be respected",
-        ));
+        ))
     }
 
+    /// L* that is used to determine the max number in stepfunction
+    /// of the processor demand to check.
     fn l_star(&self) -> f64 {
         let (u, s) = self.set.iter().fold((0.0, 0.0), |mut acc, t| {
             let u = t.p_util();
@@ -197,10 +214,10 @@ impl<T: EDF + Debug> TaskSet<T> {
             acc.1 += (t - d) * u;
             acc
         });
-        let l_star = s / (1.0 - u);
-        l_star
+        s / (1.0 - u)
     }
 
+    /// calculates processor demand until l
     fn g(&self, l: f64) -> f64 {
         self.set.iter().fold(0.0, |acc, t| {
             acc + ((l + t.t() as f64 - t.d() as f64) / t.t() as f64).floor() * t.c() as f64
@@ -208,9 +225,10 @@ impl<T: EDF + Debug> TaskSet<T> {
     }
 }
 
+/// Recursively calculates the greates common divisor.
 pub fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 {
         return a;
     }
-    return gcd(b, a % b);
+    gcd(b, a % b)
 }
