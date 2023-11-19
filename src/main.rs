@@ -2,9 +2,9 @@ use scheduling::prelude::*;
 
 fn main() {
     let s = TaskSet::new(vec![
-        task!( c: 13, t: 34, d: 19),
-        task!( c: 11, t: 41, d: 29),
-        task!( c: 10, t: 53, d: 43),
+        task!(c: 2, t: 5, d: 5),
+        task!(c: 2, t: 7, d: 7),
+        task!(c: 2, t: 7, d: 7),
     ]);
-    println!("{:?}", s.solve_edf())
+    println!("{:?}", s.solve_fpps())
 }

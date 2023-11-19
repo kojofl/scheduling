@@ -73,11 +73,23 @@ macro_rules! impl_abstract_task {
 
 /// The Task represents a basic task that has
 /// computation time c, deadline d and period t.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Task {
     pub c: u32,
     pub d: u32,
     pub t: u32,
+}
+
+impl PartialOrd for Task {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.d().cmp(&other.d()))
+    }
+}
+
+impl Ord for Task {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.d().cmp(&other.d())
+    }
 }
 
 impl Task {
@@ -86,6 +98,27 @@ impl Task {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PriorityTask {
+    pub c: u32,
+    pub d: u32,
+    pub t: u32,
+    pub p: u32,
+}
+
+impl PartialOrd for PriorityTask {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.p.cmp(&other.p))
+    }
+}
+
+impl Ord for PriorityTask {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.p.cmp(&other.p)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DeferredTask {
     pub c: u32,
     pub d: u32,
@@ -93,6 +126,19 @@ pub struct DeferredTask {
     pub q: u32,
 }
 
+impl PartialOrd for DeferredTask {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.d().cmp(&other.d()))
+    }
+}
+
+impl Ord for DeferredTask {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.d().cmp(&other.d())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ThreshTask {
     pub c: u32,
     pub d: u32,
@@ -101,7 +147,7 @@ pub struct ThreshTask {
     pub p: u32,
 }
 
-impl_abstract_task!(Task, DeferredTask, ThreshTask);
+impl_abstract_task!(Task, PriorityTask, DeferredTask, ThreshTask);
 
 /// The AbstractTask is the trait implemented by all Tasks.
 /// All Tasks need to have a way to retrieve, c, d and t.

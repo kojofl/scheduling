@@ -27,13 +27,13 @@ pub enum DeadlineStrategy {
 }
 
 #[derive(Clone, Debug)]
-pub struct TaskSet<T: AbstractTask> {
+pub struct TaskSet<T: AbstractTask + Ord> {
     pub set: Vec<T>,
     strategy: DeadlineStrategy,
 }
 
-impl<T: AbstractTask> TaskSet<T> {
-    pub fn new(tasks: Vec<T>) -> Self {
+impl<T: AbstractTask + Ord> TaskSet<T> {
+    pub fn new(mut tasks: Vec<T>) -> Self {
         let mut strategy = DeadlineStrategy::Implicit;
         for t in tasks.iter() {
             if t.d() > t.t() {
@@ -44,10 +44,15 @@ impl<T: AbstractTask> TaskSet<T> {
                 strategy = DeadlineStrategy::Constraint;
             }
         }
+        tasks.sort();
         Self {
             set: tasks,
             strategy,
         }
+    }
+
+    pub fn processor_util(&self) -> f64 {
+        self.set.iter().fold(0.0, |acc, t| acc + t.p_util())
     }
 
     pub fn h(&self) -> u32 {
@@ -64,7 +69,67 @@ impl<T: AbstractTask> TaskSet<T> {
     }
 }
 
-impl<T: AbstractTask> TaskSet<T> {
+impl<T: AbstractTask + Ord> TaskSet<T> {
+    pub fn solve_fpns(&self) -> SchedulingResult {
+        let u = self.processor_util();
+        if u > 1.0 {
+            return SchedulingResult::Unschedulable(format!("Processor demand above 1\nU: {u}"));
+        }
+        self.level_i_blocking()
+    }
+
+    fn level_i_blocking(&self) -> SchedulingResult {
+        for (i, t) in self.set.iter().enumerate() {
+            let b = self.set[i + 1..].iter().fold(0, |mut max, t| {
+                if max >= t.c() - 1 {
+                    max
+                } else {
+                    max = t.c() - 1;
+                    max
+                }
+            }) as f64;
+            let mut level_i = b + self.set[..=i].iter().fold(0, |acc, t| acc + t.c()) as f64;
+            loop {
+                let new_l = b + self.set[..=i].iter().fold(0.0, |acc, t| {
+                    acc + (level_i / t.t() as f64).ceil() * t.c() as f64
+                });
+                // We found fixpoint and thus the level i active period
+                if new_l == level_i {
+                    break;
+                }
+                level_i = new_l;
+            }
+            let l = (level_i / t.t() as f64).ceil() as u32;
+            let mut f: Option<u32> = None;
+            for k in 1..=l {
+                let mut f_k = if k == 1 {
+                    t.c() + self.set[..i].iter().fold(0, |acc, t| acc + t.c())
+                } else {
+                    f.unwrap() + t.c()
+                };
+                let d_k = t.d() * k;
+                loop {
+                    let n_f_k = k * t.c()
+                        + self.set[..i].iter().fold(0, |acc, t2| {
+                            acc + (f_k as f64 / t2.t() as f64).ceil() as u32 * t2.c()
+                        });
+                    if n_f_k > d_k {
+                        return SchedulingResult::Unschedulable(format!("Deadline miss in task: {i} number: {k} finish_time: {n_f_k} deadline: {d_k}"));
+                    }
+                    if n_f_k == f_k {
+                        println!("Task{i}_{k} scheduable with {f_k} and deadline {d_k}");
+                        break;
+                    }
+                    f_k = n_f_k;
+                }
+                f = Some(f_k);
+            }
+        }
+        SchedulingResult::Schedulable("No deadline miss in tasks in level i active period".into())
+    }
+}
+
+impl<T: AbstractTask + Ord> TaskSet<T> {
     /// Solves schedubility test for FPPS in increasing complexity
     /// It is important to sort the tasks according to their priority
     /// before calling this function.
@@ -73,7 +138,7 @@ impl<T: AbstractTask> TaskSet<T> {
     /// it is sorted according to the given priority.
     pub fn solve_fpps(&self) -> SchedulingResult {
         // Processor util test
-        let u = self.set.iter().fold(0.0, |acc, t| acc + t.p_util());
+        let u = self.processor_util();
         if u > 1.0 {
             return SchedulingResult::Unschedulable(format!("Processor demand above 1\nU: {u}"));
         }
@@ -140,22 +205,46 @@ impl<T: AbstractTask> TaskSet<T> {
                 let new_l = self.set[..=i].iter().fold(0.0, |acc, t| {
                     acc + (level_i / t.t() as f64).ceil() * t.c() as f64
                 });
-                // We found fixpoint and this the level i active period
+                // We found fixpoint and thus the level i active period
                 if new_l == level_i {
                     break;
                 }
                 level_i = new_l;
             }
             let l = (level_i / t.t() as f64).ceil() as u32;
+            let mut f: Option<u32> = None;
+            for k in 1..=l {
+                let mut f_k = if k == 1 {
+                    t.c() + self.set[..i].iter().fold(0, |acc, t| acc + t.c())
+                } else {
+                    f.unwrap() + t.c()
+                };
+                let d_k = t.d() * k;
+                loop {
+                    let n_f_k = k * t.c()
+                        + self.set[..i].iter().fold(0, |acc, t2| {
+                            acc + (f_k as f64 / t2.t() as f64).ceil() as u32 * t2.c()
+                        });
+                    if n_f_k > d_k {
+                        return SchedulingResult::Unschedulable(format!("Deadline miss in task: {i} number: {k} finish_time: {n_f_k} deadline: {d_k}"));
+                    }
+                    if n_f_k == f_k {
+                        println!("Task{i}_{k} scheduable with {f_k} and deadline {d_k}");
+                        break;
+                    }
+                    f_k = n_f_k;
+                }
+                f = Some(f_k);
+            }
         }
-        todo!()
+        SchedulingResult::Schedulable("No deadline miss in tasks in level i active period".into())
     }
 }
 
 // Seperate edf implementation
-impl<T: AbstractTask> TaskSet<T> {
+impl<T: AbstractTask + Ord> TaskSet<T> {
     pub fn solve_edf(&self) -> SchedulingResult {
-        let u = self.set.iter().fold(0.0, |acc, t| acc + t.p_util());
+        let u = self.processor_util();
         if u > 1.0 {
             return SchedulingResult::Unschedulable(format!("Processor demand above 1\nU: {u}"));
         }
