@@ -14,6 +14,22 @@ macro_rules! task {
             t: $t,
         }
     };
+    ( c: $c:expr, d: $d:expr, t: $t:expr, p: $p:expr  ) => {
+        PriorityTask {
+            c: $c,
+            d: $d,
+            t: $t,
+            p: $p,
+        }
+    };
+    ( c: $c:expr, t: $t:expr, d: $d:expr, p: $p:expr  ) => {
+        PriorityTask {
+            c: $c,
+            d: $d,
+            t: $t,
+            p: $p,
+        }
+    };
     ( c: $c:expr, d: $d:expr, t: $t:expr, q: $q:expr  ) => {
         DeferredTask {
             c: $c,
@@ -71,6 +87,23 @@ macro_rules! impl_abstract_task {
     };
 }
 
+macro_rules! impl_threshhold_task {
+    ( $($t:ty),+ ) => {
+        $(
+            impl Threshhold for $t {
+                #[inline]
+                fn p(&self) -> u32 {
+                    self.p
+                }
+                #[inline]
+                fn o(&self) -> u32 {
+                    self.o
+                }
+            }
+        )+
+    };
+}
+
 /// The Task represents a basic task that has
 /// computation time c, deadline d and period t.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,13 +141,13 @@ pub struct PriorityTask {
 
 impl PartialOrd for PriorityTask {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.p.cmp(&other.p))
+        Some(other.p.cmp(&self.p))
     }
 }
 
 impl Ord for PriorityTask {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.p.cmp(&other.p)
+        other.p.cmp(&self.p)
     }
 }
 
@@ -147,7 +180,28 @@ pub struct ThreshTask {
     pub p: u32,
 }
 
+impl PartialOrd for ThreshTask {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(other.p.cmp(&self.p))
+    }
+}
+
+impl Ord for ThreshTask {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.p.cmp(&self.p)
+    }
+}
+
 impl_abstract_task!(Task, PriorityTask, DeferredTask, ThreshTask);
+impl_threshhold_task!(ThreshTask);
+
+/// All tasks that implement Threshhold can use fpts scheduling test.
+pub trait Threshhold: AbstractTask {
+    /// initial task priority
+    fn p(&self) -> u32;
+    /// running threshhold
+    fn o(&self) -> u32;
+}
 
 /// The AbstractTask is the trait implemented by all Tasks.
 /// All Tasks need to have a way to retrieve, c, d and t.

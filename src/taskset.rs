@@ -1,6 +1,10 @@
 use std::{collections::HashSet, fmt::Debug};
 
-use crate::task::AbstractTask;
+use crate::task::{AbstractTask, Threshhold};
+
+/// The epsilon used as the first iteration start time in FPNS
+/// if there is no blocking time.
+static EPSILON: f64 = 0.000001;
 
 #[macro_export]
 macro_rules! gcd {
@@ -69,6 +73,83 @@ impl<T: AbstractTask + Ord> TaskSet<T> {
     }
 }
 
+impl<T: Threshhold + Ord> TaskSet<T> {
+    pub fn solve_fpts(&self) -> SchedulingResult {
+        let u = self.processor_util();
+        if u > 1.0 {
+            return SchedulingResult::Unschedulable(format!("Processor demand above 1\nU: {u}"));
+        }
+        self.level_i_threshhold()
+    }
+
+    fn level_i_threshhold(&self) -> SchedulingResult {
+        for (i, t) in self.set.iter().enumerate() {
+            let b = self
+                .set
+                .iter()
+                .filter(|t2| t2.p() < t.p() && t.p() <= t2.o())
+                .fold(0, |max, t| max.max(t.c() - 1));
+            println!("{b}");
+            let mut level_i = b + self.set[..=i].iter().fold(0, |acc, t| acc + t.c());
+            loop {
+                let new_l = b + self.set[..=i].iter().fold(0, |acc, t| {
+                    acc + (level_i as f64 / t.t() as f64).ceil() as u32 * t.c()
+                });
+                // We found fixpoint and thus the level i active period
+                if new_l == level_i {
+                    break;
+                }
+                level_i = new_l;
+            }
+            println!("task_{i} has level i active: {level_i}");
+            let l = (level_i as f64 / t.t() as f64).ceil() as u32;
+            let mut s = (b as f64).max(EPSILON);
+            for k in 1..=l {
+                let d_k = t.d() * k;
+                loop {
+                    let n_s_k = b
+                        + (k - 1) * t.c()
+                        + self.set[..i].iter().fold(0, |acc, t2| {
+                            acc + ((s / t2.t() as f64).floor() as u32 + 1) * t2.c()
+                        });
+                    if n_s_k > d_k {
+                        return SchedulingResult::Unschedulable(format!("Deadline miss in task: {i} number: {k} start_time: {n_s_k} deadline: {d_k}"));
+                    }
+                    if n_s_k == s as u32 {
+                        println!("Task{i}_{k} start time at s: {s}");
+                        break;
+                    }
+                    s = n_s_k as f64;
+                }
+                let mut f = s as u32 + t.c();
+                loop {
+                    if f > d_k {
+                        return SchedulingResult::Unschedulable(format!(
+                                "Deadline miss in task: {i} number: {k} finish_time: {f} deadline: {d_k}"
+                                ));
+                    }
+                    let f_new = s as u32
+                        + t.c()
+                        + self.set[..i]
+                            .iter()
+                            .chain(&self.set[i + 1..])
+                            .filter(|t2| t2.p() > t.o())
+                            .fold(0, |acc, t| {
+                                acc + ((f as f64 / t.t() as f64).ceil() as u32
+                                    - ((s / t.t() as f64).floor() as u32 + 1))
+                                    * t.c()
+                            });
+                    if f == f_new {
+                        break;
+                    }
+                    f = f_new;
+                }
+            }
+        }
+        SchedulingResult::Schedulable("No deadline miss in tasks in level i active period".into())
+    }
+}
+
 impl<T: AbstractTask + Ord> TaskSet<T> {
     pub fn solve_fpns(&self) -> SchedulingResult {
         let u = self.processor_util();
@@ -80,18 +161,14 @@ impl<T: AbstractTask + Ord> TaskSet<T> {
 
     fn level_i_blocking(&self) -> SchedulingResult {
         for (i, t) in self.set.iter().enumerate() {
-            let b = self.set[i + 1..].iter().fold(0, |mut max, t| {
-                if max >= t.c() - 1 {
-                    max
-                } else {
-                    max = t.c() - 1;
-                    max
-                }
-            }) as f64;
-            let mut level_i = b + self.set[..=i].iter().fold(0, |acc, t| acc + t.c()) as f64;
+            let b: u32 = self.set[i + 1..]
+                .iter()
+                .fold(0, |max, t| max.max(t.c() - 1));
+            println!("{b}");
+            let mut level_i = b + self.set[..=i].iter().fold(0, |acc, t| acc + t.c());
             loop {
-                let new_l = b + self.set[..=i].iter().fold(0.0, |acc, t| {
-                    acc + (level_i / t.t() as f64).ceil() * t.c() as f64
+                let new_l = b + self.set[..=i].iter().fold(0, |acc, t| {
+                    acc + (level_i as f64 / t.t() as f64).ceil() as u32 * t.c()
                 });
                 // We found fixpoint and thus the level i active period
                 if new_l == level_i {
@@ -99,30 +176,32 @@ impl<T: AbstractTask + Ord> TaskSet<T> {
                 }
                 level_i = new_l;
             }
-            let l = (level_i / t.t() as f64).ceil() as u32;
-            let mut f: Option<u32> = None;
+            println!("task_{i} has level i active: {level_i}");
+            let l = (level_i as f64 / t.t() as f64).ceil() as u32;
+            let mut s = (b as f64).max(EPSILON);
             for k in 1..=l {
-                let mut f_k = if k == 1 {
-                    t.c() + self.set[..i].iter().fold(0, |acc, t| acc + t.c())
-                } else {
-                    f.unwrap() + t.c()
-                };
                 let d_k = t.d() * k;
                 loop {
-                    let n_f_k = k * t.c()
+                    let n_s_k = b
+                        + (k - 1) * t.c()
                         + self.set[..i].iter().fold(0, |acc, t2| {
-                            acc + (f_k as f64 / t2.t() as f64).ceil() as u32 * t2.c()
+                            acc + ((s / t2.t() as f64).floor() as u32 + 1) * t2.c()
                         });
-                    if n_f_k > d_k {
-                        return SchedulingResult::Unschedulable(format!("Deadline miss in task: {i} number: {k} finish_time: {n_f_k} deadline: {d_k}"));
+                    if n_s_k > d_k {
+                        return SchedulingResult::Unschedulable(format!("Deadline miss in task: {i} number: {k} start_time: {n_s_k} deadline: {d_k}"));
                     }
-                    if n_f_k == f_k {
-                        println!("Task{i}_{k} scheduable with {f_k} and deadline {d_k}");
+                    if n_s_k == s as u32 {
+                        println!("Task{i}_{k} start time at s: {s}");
                         break;
                     }
-                    f_k = n_f_k;
+                    s = n_s_k as f64;
                 }
-                f = Some(f_k);
+                let r = s as u32 + t.c();
+                if r > d_k {
+                    return SchedulingResult::Unschedulable(format!(
+                        "Deadline miss in task: {i} number: {k} response_time: {r} deadline: {d_k}"
+                    ));
+                }
             }
         }
         SchedulingResult::Schedulable("No deadline miss in tasks in level i active period".into())
