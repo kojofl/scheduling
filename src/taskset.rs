@@ -30,6 +30,11 @@ pub enum DeadlineStrategy {
     Arbitrary,
 }
 
+pub enum Numbers {
+    Real,
+    Natural,
+}
+
 #[derive(Clone, Debug)]
 pub struct TaskSet<T: AbstractTask + Ord> {
     pub set: Vec<T>,
@@ -74,21 +79,27 @@ impl<T: AbstractTask + Ord> TaskSet<T> {
 }
 
 impl<T: Threshhold + Ord> TaskSet<T> {
-    pub fn solve_fpts(&self) -> SchedulingResult {
+    pub fn solve_fpts(&self, number_realm: Numbers) -> SchedulingResult {
         let u = self.processor_util();
         if u > 1.0 {
             return SchedulingResult::Unschedulable(format!("Processor demand above 1\nU: {u}"));
         }
-        self.level_i_threshhold()
+        println!("U: {u}");
+        self.level_i_threshhold(number_realm)
     }
 
-    fn level_i_threshhold(&self) -> SchedulingResult {
+    fn level_i_threshhold(&self, number_realm: Numbers) -> SchedulingResult {
         for (i, t) in self.set.iter().enumerate() {
             let b = self
                 .set
                 .iter()
                 .filter(|t2| t2.p() < t.p() && t.p() <= t2.o())
-                .fold(0, |max, t| max.max(t.c() - 1));
+                .fold(0, |max, t| {
+                    max.max(match number_realm {
+                        Numbers::Natural => t.c() - 1,
+                        Numbers::Real => t.c(),
+                    })
+                });
             println!("{b}");
             let mut level_i = b + self.set[..=i].iter().fold(0, |acc, t| acc + t.c());
             loop {
@@ -151,19 +162,23 @@ impl<T: Threshhold + Ord> TaskSet<T> {
 }
 
 impl<T: AbstractTask + Ord> TaskSet<T> {
-    pub fn solve_fpns(&self) -> SchedulingResult {
+    pub fn solve_fpns(&self, number_realm: Numbers) -> SchedulingResult {
         let u = self.processor_util();
         if u > 1.0 {
             return SchedulingResult::Unschedulable(format!("Processor demand above 1\nU: {u}"));
         }
-        self.level_i_blocking()
+        println!("U: {u}");
+        self.level_i_blocking(number_realm)
     }
 
-    fn level_i_blocking(&self) -> SchedulingResult {
+    fn level_i_blocking(&self, number_realm: Numbers) -> SchedulingResult {
         for (i, t) in self.set.iter().enumerate() {
-            let b: u32 = self.set[i + 1..]
-                .iter()
-                .fold(0, |max, t| max.max(t.c() - 1));
+            let b: u32 = self.set[i + 1..].iter().fold(0, |max, t| {
+                max.max(match number_realm {
+                    Numbers::Natural => t.c() - 1,
+                    Numbers::Real => t.c(),
+                })
+            });
             println!("{b}");
             let mut level_i = b + self.set[..=i].iter().fold(0, |acc, t| acc + t.c());
             loop {
