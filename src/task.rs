@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[macro_export]
 macro_rules! task {
     ( c: $c:expr, d: $d:expr, t: $t:expr  ) => {
@@ -111,6 +113,18 @@ pub struct Task {
     pub c: u32,
     pub d: u32,
     pub t: u32,
+}
+
+impl Display for Task {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let width = [self.c, self.d, self.t]
+            .iter()
+            .map(|x| x.to_string().len())
+            .max()
+            .unwrap()
+            + 1;
+        todo!()
+    }
 }
 
 impl PartialOrd for Task {
