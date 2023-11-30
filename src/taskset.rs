@@ -1,6 +1,6 @@
 use std::{collections::HashSet, fmt::Debug};
 
-use crate::task::{AbstractTask, Threshhold};
+use crate::task::{AbstractTask, BlockingTask, Threshhold};
 
 /// The epsilon used as the first iteration start time in FPNS
 /// if there is no blocking time.
@@ -151,6 +151,9 @@ impl<T: Threshhold + Ord> TaskSet<T> {
                                     * t.c()
                             });
                     if f == f_new {
+                        println!(
+                            "Task{i}_{k} scheduable finish time at f: {f} deadline at d: {d_k}"
+                        );
                         break;
                     }
                     f = f_new;
@@ -217,9 +220,24 @@ impl<T: AbstractTask + Ord> TaskSet<T> {
                         "Deadline miss in task: {i} number: {k} response_time: {r} deadline: {d_k}"
                     ));
                 }
+                println!("Task{i}_{k} scheduable finish time at f: {r} deadline at {d_k}");
             }
         }
         SchedulingResult::Schedulable("No deadline miss in tasks in level i active period".into())
+    }
+
+    #[must_use]
+    pub fn to_blocking(self, blocking: &[u32]) -> TaskSet<BlockingTask> {
+        assert_eq!(self.set.len(), blocking.len());
+        TaskSet {
+            set: self
+                .set
+                .into_iter()
+                .zip(blocking.into_iter())
+                .map(|(t, b)| t.into_blocking(*b))
+                .collect(),
+            strategy: self.strategy,
+        }
     }
 }
 
@@ -301,6 +319,7 @@ impl<T: AbstractTask + Ord> TaskSet<T> {
                 });
                 // We found fixpoint and thus the level i active period
                 if new_l == level_i {
+                    println!("Task{i} has level_i active period of {level_i}");
                     break;
                 }
                 level_i = new_l;
@@ -332,6 +351,71 @@ impl<T: AbstractTask + Ord> TaskSet<T> {
             }
         }
         SchedulingResult::Schedulable("No deadline miss in tasks in level i active period".into())
+    }
+}
+
+impl TaskSet<BlockingTask> {
+    pub fn solve_fpps_blocking(&self) -> SchedulingResult {
+        // Processor util test
+        let u = self.processor_util();
+        if u > 1.0 {
+            return SchedulingResult::Unschedulable(format!("Processor demand above 1\nU: {u}"));
+        }
+        match self.strategy {
+            // If implicit deadlines we can do U_lub and Hyperbolic bound befor resorting to rtime
+            DeadlineStrategy::Implicit => {
+                println!("U: {u}");
+                // U_lub test
+                let n = self.set.len() as f64;
+                let u_lub = n * (2_f64.powf(1.0 / n) - 1.0);
+                if u <= u_lub {
+                    return SchedulingResult::Schedulable(format!(
+                        "Processor util under lowest upper bound: {u_lub} U: {u}"
+                    ));
+                }
+                let h_bound = self.set.iter().fold(1.0, |acc, t| acc * (t.p_util() + 1.0));
+                if h_bound <= 2.0 {
+                    return SchedulingResult::Schedulable(format!(
+                        "Hyperbolic Bound test successfull {h_bound} <= 2.0"
+                    ));
+                }
+                println!("h_bound: {h_bound}");
+                self.rtime_with_block()
+            }
+            DeadlineStrategy::Constraint => self.rtime_with_block(),
+            DeadlineStrategy::Arbitrary => self.level_i_non_blocking(),
+        }
+    }
+
+    /// Response time analysis.
+    fn rtime_with_block(&self) -> SchedulingResult {
+        for (i, t) in self.set.iter().enumerate() {
+            let mut point = self.set[..=i].iter().fold(0, |acc, t| acc + t.c()) + t.b;
+            let mut j = 0;
+            println!("R{i},{j}: {point}");
+            loop {
+                j += 1;
+                let new_p = t.c()
+                    + t.b
+                    + self.set[..i].iter().fold(0, |acc, t| {
+                        acc + ((point as f64 / t.t() as f64).ceil() as u32) * t.c()
+                    });
+                if new_p > t.d() {
+                    return SchedulingResult::Unschedulable(
+                        format!("The response time analysis detected a deadline miss at {new_p} in T{i} c: {}, t: {}, d: {}", t.c(), t.t(), t.d()),
+                        );
+                }
+                if point == new_p {
+                    break;
+                }
+                point = new_p;
+                println!("R{i},{j}: {point}");
+            }
+            println!("R{i}: {point}");
+        }
+        SchedulingResult::Schedulable(
+            "No deadline miss in response time analysis => Schedulable using DM".into(),
+        )
     }
 }
 

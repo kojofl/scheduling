@@ -115,18 +115,6 @@ pub struct Task {
     pub t: u32,
 }
 
-impl Display for Task {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let width = [self.c, self.d, self.t]
-            .iter()
-            .map(|x| x.to_string().len())
-            .max()
-            .unwrap()
-            + 1;
-        todo!()
-    }
-}
-
 impl PartialOrd for Task {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.d().cmp(&other.d()))
@@ -142,6 +130,26 @@ impl Ord for Task {
 impl Task {
     pub fn new(c: u32, d: u32, t: u32) -> Self {
         Self { c, d, t }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlockingTask {
+    pub c: u32,
+    pub d: u32,
+    pub t: u32,
+    pub b: u32,
+}
+
+impl PartialOrd for BlockingTask {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.d().cmp(&other.d()))
+    }
+}
+
+impl Ord for BlockingTask {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.d().cmp(&other.d())
     }
 }
 
@@ -206,7 +214,7 @@ impl Ord for ThreshTask {
     }
 }
 
-impl_abstract_task!(Task, PriorityTask, DeferredTask, ThreshTask);
+impl_abstract_task!(Task, BlockingTask, PriorityTask, DeferredTask, ThreshTask);
 impl_threshhold_task!(ThreshTask);
 
 /// All tasks that implement Threshhold can use fpts scheduling test.
@@ -231,5 +239,16 @@ pub trait AbstractTask {
     #[inline]
     fn p_util(&self) -> f64 {
         self.c() as f64 / self.t() as f64
+    }
+    fn into_blocking(self, block: u32) -> BlockingTask
+    where
+        Self: Sized,
+    {
+        BlockingTask {
+            c: self.c(),
+            d: self.d(),
+            t: self.t(),
+            b: block,
+        }
     }
 }
